@@ -241,6 +241,7 @@ func main() {
 	klog.V(2).Infof("Detected CSI driver %s", provisionerName)
 	metricsManager.SetDriverName(provisionerName)
 
+	// TODO 似乎是用来在InTree和OutOfTree之间转换的一个东西
 	translator := csitrans.New()
 	// TODO 这个属性干嘛用的？
 	supportsMigrationFromInTreePluginName := ""
@@ -286,6 +287,7 @@ func main() {
 		metricsManager.GetRegistry(),
 	}
 
+	// 通过GRPC调用CSI插件IdentityClient服务的GetPluginCapabilities获取当前CSI插件的能力
 	// 通过GRPC调用CSI插件ControllerClient服务的ControllerGetCapabilities接口获取当前CSI插件支持什么能力
 	pluginCapabilities, controllerCapabilities, err := ctrl.GetDriverCapabilities(grpcClient, *operationTimeout)
 	if err != nil {
@@ -299,6 +301,7 @@ func main() {
 		identity = identity + "-" + node
 	}
 
+	// 每隔一小时重新同步一次
 	factory := informers.NewSharedInformerFactory(clientset, ctrl.ResyncPeriodOfCsiNodeInformer)
 	var factoryForNamespace informers.SharedInformerFactory // usually nil, only used for CSIStorageCapacity
 
