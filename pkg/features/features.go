@@ -33,6 +33,7 @@ const (
 	//
 	// Honor Persistent Volume Reclaim Policy when it is "Delete" irrespective of PV-PVC
 	// deletion ordering.
+	// TODO 这个又是啥特性？
 	HonorPVReclaimPolicy featuregate.Feature = "HonorPVReclaimPolicy"
 
 	// owner: @ttakahashi21 @mkimuram
@@ -40,6 +41,7 @@ const (
 	// alpha: v1.26
 	//
 	// Enable usage of Provision of PVCs from snapshots in other namespaces
+	// TODO 这个特性是干嘛的？
 	CrossNamespaceVolumeDataSource featuregate.Feature = "CrossNamespaceVolumeDataSource"
 )
 

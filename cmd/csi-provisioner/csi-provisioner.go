@@ -74,7 +74,8 @@ var (
 	kubeconfig = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Either this or master needs to be set if the provisioner is being run out of cluster.")
 	// external-provisioner, external-attacher, external-resizer, external-snapshotter和CSI插件应该部署在一个节点当中，并且
 	// 需要把CSI插件的socket文件挂载到这些容器当中
-	csiEndpoint          = flag.String("csi-address", "/run/csi/socket", "The gRPC endpoint for Target CSI Volume.")
+	csiEndpoint = flag.String("csi-address", "/run/csi/socket", "The gRPC endpoint for Target CSI Volume.")
+	// TODO 用于为CSI插件指定创建的卷的前缀
 	volumeNamePrefix     = flag.String("volume-name-prefix", "pvc", "Prefix to apply to the name of a created volume.")
 	volumeNameUUIDLength = flag.Int("volume-name-uuid-length", -1, "Truncates generated UUID of a created volume to this length. Defaults behavior is to NOT truncate.")
 	showVersion          = flag.Bool("version", false, "Show version.")
@@ -108,6 +109,7 @@ var (
 	kubeAPICapacityQPS   = flag.Float32("kube-api-capacity-qps", 1, "QPS to use for storage capacity updates while communicating with the kubernetes apiserver. Defaults to 1.0.")
 	kubeAPICapacityBurst = flag.Int("kube-api-capacity-burst", 5, "Burst to use for storage capacity updates while communicating with the kubernetes apiserver. Defaults to 5.")
 
+	// TODO 这个参数有啥用？
 	enableCapacity           = flag.Bool("enable-capacity", false, "This enables producing CSIStorageCapacity objects with capacity information from the driver's GetCapacity call.")
 	capacityImmediateBinding = flag.Bool("capacity-for-immediate-binding", false, "Enables producing capacity information for storage classes with immediate binding. Not needed for the Kubernetes scheduler, maybe useful for other consumers or for debugging.")
 	capacityPollInterval     = flag.Duration("capacity-poll-interval", time.Minute, "How long the external-provisioner waits before checking for storage capacity changes.")
@@ -142,6 +144,7 @@ func main() {
 
 	ctx := context.Background()
 
+	// 设置特性开挂
 	if err := utilfeature.DefaultMutableFeatureGate.SetFromMap(featureGates); err != nil {
 		klog.Fatal(err)
 	}
@@ -218,7 +221,7 @@ func main() {
 	)
 
 	// external-provisioner, external-attacher, external-resizer, external-snapshotter和CSI插件应该部署在一个节点当中，并且
-	// 需要把CSI插件的socket文件挂载到这些容器当中
+	// 需要把CSI插件的socket文件挂载到这些容器当中，通过共享一个emptyDir来完成
 	grpcClient, err := ctrl.Connect(*csiEndpoint, metricsManager)
 	if err != nil {
 		klog.Error(err.Error())
@@ -233,7 +236,7 @@ func main() {
 	}
 
 	// Autodetect provisioner name
-	// 通过RPC调用CSI插件的IdentityClient服务的GetPluginInfo接口获取插件信息
+	// 通过RPC调用CSI插件的IdentityClient服务的GetPluginInfo接口获CSI插件名称
 	provisionerName, err := ctrl.GetDriverName(grpcClient, *operationTimeout)
 	if err != nil {
 		klog.Fatalf("Error getting CSI driver name: %s", err)
@@ -246,6 +249,7 @@ func main() {
 	// TODO 这个属性干嘛用的？
 	supportsMigrationFromInTreePluginName := ""
 	// K8S在逐渐迁移内部的InTree插件到OutOfTree插件当中
+	// TODO 为什么对于正在从InTree迁移到OutOfTree的CSI插件需要专门做处理，看起来似乎只有MetricServer
 	if translator.IsMigratedCSIDriverByName(provisionerName) {
 		supportsMigrationFromInTreePluginName, err = translator.GetInTreeNameFromCSIName(provisionerName)
 		if err != nil {
@@ -288,7 +292,7 @@ func main() {
 	}
 
 	// 通过GRPC调用CSI插件IdentityClient服务的GetPluginCapabilities获取当前CSI插件的能力
-	// 通过GRPC调用CSI插件ControllerClient服务的ControllerGetCapabilities接口获取当前CSI插件支持什么能力
+	// 通过GRPC调用CSI插件ControllerClient服务的ControllerGetCapabilities接口获取当前CSI插件支持的能力
 	pluginCapabilities, controllerCapabilities, err := ctrl.GetDriverCapabilities(grpcClient, *operationTimeout)
 	if err != nil {
 		klog.Fatalf("Error getting CSI driver capabilities: %s", err)
@@ -314,7 +318,8 @@ func main() {
 	claimLister := factory.Core().V1().PersistentVolumeClaims().Lister()
 
 	var vaLister storagelistersv1.VolumeAttachmentLister
-	// 如果当前CSI插件支持Publish/Unpublish操作，那么需要监听VolumeAttachment资源对象
+	// 如果当前CSI插件支持Publish/UnPublish操作，那么需要监听VolumeAttachment资源对象
+	// TODO 为什么external-provisioner插件需要关心VolumeAttachment资源对象？
 	if controllerCapabilities[csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME] {
 		klog.Info("CSI driver supports PUBLISH_UNPUBLISH_VOLUME, watching VolumeAttachments")
 		vaLister = factory.Storage().V1().VolumeAttachments().Lister()
@@ -331,6 +336,7 @@ func main() {
 			BaseDelay:        *nodeDeploymentBaseDelay,
 			MaxDelay:         *nodeDeploymentMaxDelay,
 		}
+		// 通过调用CSI接口的NodeGetInfo方法获取当前节点的信息
 		nodeInfo, err := ctrl.GetNodeInfo(grpcClient, *operationTimeout)
 		if err != nil {
 			klog.Fatalf("Failed to get node info from CSI driver: %v", err)
@@ -340,6 +346,7 @@ func main() {
 
 	var nodeLister listersv1.NodeLister
 	var csiNodeLister storagelistersv1.CSINodeLister
+	// TODO CSI插件的拓扑能力指的是什么？
 	if ctrl.SupportsTopology(pluginCapabilities) {
 		if nodeDeployment != nil {
 			// Avoid watching in favor of fake, static objects. This is particularly relevant for
@@ -388,6 +395,7 @@ func main() {
 
 	var referenceGrantLister referenceGrantv1beta1.ReferenceGrantLister
 	var gatewayFactory gatewayInformers.SharedInformerFactory
+	// TODO 这个特性是干嘛的？
 	if utilfeature.DefaultFeatureGate.Enabled(features.CrossNamespaceVolumeDataSource) {
 		gatewayFactory = gatewayInformers.NewSharedInformerFactory(gatewayClient, ctrl.ResyncPeriodOfReferenceGrantInformer)
 		referenceGrants := gatewayFactory.Gateway().V1beta1().ReferenceGrants()
@@ -422,6 +430,7 @@ func main() {
 
 	// Create the provisioner: it implements the Provisioner interface expected by
 	// the controller
+	// TODO 实例化CSIProvisioner
 	csiProvisioner := ctrl.NewCSIProvisioner(
 		clientset,
 		*operationTimeout,
@@ -632,6 +641,7 @@ func main() {
 	}
 
 	run := func(ctx context.Context) {
+		// 同步APIServer资源
 		factory.Start(ctx.Done())
 		if factoryForNamespace != nil {
 			// Starting is enough, the capacity controller will
