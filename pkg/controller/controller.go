@@ -205,6 +205,7 @@ var (
 
 // ProvisionerCSITranslator contains the set of CSI Translation functionality
 // required by the provisioner
+// TODO 如何理解这个接口？
 type ProvisionerCSITranslator interface {
 	TranslateInTreeStorageClassToCSI(inTreePluginName string, sc *storagev1.StorageClass) (*storagev1.StorageClass, error)
 	TranslateCSIPVToInTree(pv *v1.PersistentVolume) (*v1.PersistentVolume, error)
@@ -223,6 +224,7 @@ type requiredCapabilities struct {
 
 // NodeDeployment contains additional parameters for running external-provisioner alongside a
 // CSI driver on one or more nodes in the cluster.
+// TODO 这个数据结构主要是为CSI Driver提供额外的参数
 type NodeDeployment struct {
 	// NodeName is the name of the node in Kubernetes on which the external-provisioner runs.
 	NodeName string
@@ -247,34 +249,62 @@ type internalNodeDeployment struct {
 	rateLimiter workqueue.RateLimiter
 }
 
+// 用于创建/删除卷
 type csiProvisioner struct {
-	client                                kubernetes.Interface
-	csiClient                             csi.ControllerClient
-	grpcClient                            *grpc.ClientConn
-	snapshotClient                        snapclientset.Interface
-	timeout                               time.Duration
-	identity                              string
-	volumeNamePrefix                      string
-	defaultFSType                         string
-	volumeNameUUIDLength                  int
-	driverName                            string
-	pluginCapabilities                    rpc.PluginCapabilitySet
-	controllerCapabilities                rpc.ControllerCapabilitySet
+	// APIServer的客户段
+	client kubernetes.Interface
+	// CSI客户端
+	csiClient csi.ControllerClient
+	// GRPC客户端
+	grpcClient *grpc.ClientConn
+	// TODO 快照客户端,命名ControllerClient已经包含了快照的相关的操作，为什么治理需要单独的接口？
+	snapshotClient snapclientset.Interface
+	// TODO 这个超时给谁用？
+	timeout time.Duration
+	// 身份标识，这玩意是初始化的时候随机生成的
+	identity string
+	// Volume前缀，可以通过参数指定
+	volumeNamePrefix string
+	// TODO 这玩意干嘛的？
+	defaultFSType string
+	// TODO 这玩意也是可以通过UUID来生成
+	volumeNameUUIDLength int
+	// TODO 什么叫做驱动名字？
+	driverName string
+	// TODO 当前和external-provisioner sidecar在一个Pod内的CSI插件有哪些能力？
+	pluginCapabilities rpc.PluginCapabilitySet
+	// TODO 当前和external-provisioner sidecar在一个Pod内的CSI插件有哪些能力？
+	controllerCapabilities rpc.ControllerCapabilitySet
+	// TODO 这玩意干嘛的？
 	supportsMigrationFromInTreePluginName string
-	strictTopology                        bool
-	immediateTopology                     bool
-	translator                            ProvisionerCSITranslator
-	scLister                              storagelistersv1.StorageClassLister
-	csiNodeLister                         storagelistersv1.CSINodeLister
-	nodeLister                            corelisters.NodeLister
-	claimLister                           corelisters.PersistentVolumeClaimLister
-	vaLister                              storagelistersv1.VolumeAttachmentLister
-	referenceGrantLister                  referenceGrantv1beta1.ReferenceGrantLister
-	extraCreateMetadata                   bool
-	eventRecorder                         record.EventRecorder
-	nodeDeployment                        *internalNodeDeployment
-	controllerPublishReadOnly             bool
-	preventVolumeModeConversion           bool
+	// TODO 严格拓扑是啥意思？
+	strictTopology bool
+	// TODO 直接拓扑是啥意思？
+	immediateTopology bool
+	// TODO Translator翻译了啥？
+	translator ProvisionerCSITranslator
+	// 用于遍历StorageClass资源对象
+	scLister storagelistersv1.StorageClassLister
+	// 用于遍历CSINode资源对象
+	csiNodeLister storagelistersv1.CSINodeLister
+	// 用于遍历Node资源对象
+	nodeLister corelisters.NodeLister
+	// 用于遍历PVC资源对象
+	claimLister corelisters.PersistentVolumeClaimLister
+	// 用于遍历VolumeAttachment资源对象
+	vaLister storagelistersv1.VolumeAttachmentLister
+	// TODO 用于遍历ReferenceGrant资源对象 ReferenceGrant资源是用来干嘛的？用于解决什么问题？有什么优点和弊端？
+	referenceGrantLister referenceGrantv1beta1.ReferenceGrantLister
+	// TODO 这个字段干嘛的？
+	extraCreateMetadata bool
+	// 时间记录器
+	eventRecorder record.EventRecorder
+	// TODO 干啥用的？
+	nodeDeployment *internalNodeDeployment
+	// TODO 控制什么逻辑？
+	controllerPublishReadOnly bool
+	// TODO 干嘛的？
+	preventVolumeModeConversion bool
 }
 
 var (
@@ -287,6 +317,7 @@ var (
 // identify string will be added in PV annotations under this key.
 var provisionerIDKey = "storage.kubernetes.io/csiProvisionerIdentity"
 
+// Connect 用于建立GRPC连接
 func Connect(address string, metricsManager metrics.CSIMetricsManager) (*grpc.ClientConn, error) {
 	return connection.Connect(address, metricsManager, connection.OnConnectionLoss(connection.ExitOnConnectionLoss()))
 }
