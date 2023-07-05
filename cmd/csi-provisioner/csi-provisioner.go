@@ -505,6 +505,7 @@ func main() {
 
 		var topologyInformer topology.Informer
 		if nodeDeployment == nil {
+			// TODO 节点拓扑是用来干嘛的？
 			topologyInformer = topology.NewNodeTopology(
 				provisionerName,
 				clientset,

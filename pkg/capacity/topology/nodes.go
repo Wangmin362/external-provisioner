@@ -40,6 +40,7 @@ import (
 // driver node instance reports.  See
 // https://github.com/kubernetes/enhancements/tree/master/keps/sig-storage/1472-storage-capacity-tracking#with-central-controller
 // for details.
+// TODO 节点拓扑指得啥？
 func NewNodeTopology(
 	driverName string,
 	client kubernetes.Interface,
