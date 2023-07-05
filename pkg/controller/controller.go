@@ -136,8 +136,12 @@ const (
 	annMigratedTo = "pv.kubernetes.io/migrated-to"
 	// TODO: Beta will be deprecated and removed in a later release
 	annBetaStorageProvisioner = "volume.beta.kubernetes.io/storage-provisioner"
-	annStorageProvisioner     = "volume.kubernetes.io/storage-provisioner"
-	annSelectedNode           = "volume.kubernetes.io/selected-node"
+	// 当前PVC想要使用哪个存储提供商创建存储卷。因为在一个K8S集群中，我们可以部署不同的存储提供商，而业务容器可以根据需求的不同来选择
+	// 不同的存储提供商。这里通过注解来实现，也是一种解耦的思想
+	annStorageProvisioner = "volume.kubernetes.io/storage-provisioner"
+	// TODO 这个注解有何作用？
+	// TODO 设个注解什么时候会被哪个组件设置值？
+	annSelectedNode = "volume.kubernetes.io/selected-node"
 
 	// Annotation for secret name and namespace will be added to the pv object
 	// and used at pvc deletion time.
@@ -227,6 +231,7 @@ type requiredCapabilities struct {
 // TODO 这个数据结构主要是为CSI Driver提供额外的参数
 type NodeDeployment struct {
 	// NodeName is the name of the node in Kubernetes on which the external-provisioner runs.
+	// 当前的external-provisioner运行在哪个节点上？
 	NodeName string
 	// ClaimInformer is needed to detect when some other external-provisioner
 	// became the owner of a PVC while the local one is still waiting before
@@ -234,6 +239,7 @@ type NodeDeployment struct {
 	ClaimInformer coreinformers.PersistentVolumeClaimInformer
 	// NodeInfo is the result of NodeGetInfo. It is need to determine which
 	// PVs were created for the node.
+	// 该属性可以通过调用CSI接口获取当前节点的信息
 	NodeInfo csi.NodeGetInfoResponse
 	// ImmediateBinding enables support for PVCs with immediate binding.
 	ImmediateBinding bool
@@ -570,7 +576,8 @@ type prepareProvisionResult struct {
 }
 
 // prepareProvision does non-destructive parameter checking and preparations for provisioning a volume.
-func (p *csiProvisioner) prepareProvision(ctx context.Context, claim *v1.PersistentVolumeClaim, sc *storagev1.StorageClass, selectedNode *v1.Node) (*prepareProvisionResult, controller.ProvisioningState, error) {
+func (p *csiProvisioner) prepareProvision(ctx context.Context, claim *v1.PersistentVolumeClaim, sc *storagev1.StorageClass,
+	selectedNode *v1.Node) (*prepareProvisionResult, controller.ProvisioningState, error) {
 	if sc == nil {
 		return nil, controller.ProvisioningFinished, errors.New("storage class was nil")
 	}
@@ -783,12 +790,15 @@ func (p *csiProvisioner) prepareProvision(ctx context.Context, claim *v1.Persist
 
 }
 
+// Provision TODO 核心目的就是为了能够创建存储卷，主要原理还是通过CSI插件的CreateVolume来实现的。
 func (p *csiProvisioner) Provision(ctx context.Context, options controller.ProvisionOptions) (*v1.PersistentVolume, controller.ProvisioningState, error) {
 	claim := options.PVC
+	// 获取当前PVC声明使用的存储提供商
 	provisioner, ok := claim.Annotations[annStorageProvisioner]
 	if !ok {
 		provisioner = claim.Annotations[annBetaStorageProvisioner]
 	}
+	// TODO 这里的判断代表着什么？
 	if provisioner != p.driverName && claim.Annotations[annMigratedTo] != p.driverName {
 		// The storage provisioner annotation may not equal driver name but the
 		// PVC could have annotation "migrated-to" which is the new way to
@@ -813,6 +823,7 @@ func (p *csiProvisioner) Provision(ctx context.Context, options controller.Provi
 		}
 	}
 
+	// TODO 这里准备创建存储卷都干了啥？ 需要干啥？
 	result, state, err := p.prepareProvision(ctx, claim, options.StorageClass, options.SelectedNode)
 	if result == nil {
 		return nil, state, err
@@ -1437,12 +1448,16 @@ func (p *csiProvisioner) volumeHandleToId(handle string) string {
 // If the PVC uses immediate binding, it will try to take the PVC for provisioning
 // on the current node. Returns true if provisioning can proceed, an error
 // in case of a failure that prevented checking.
+// TODO PVC的瞬时绑定和延迟绑定有何区别？
 func (p *csiProvisioner) checkNode(ctx context.Context, claim *v1.PersistentVolumeClaim, sc *storagev1.StorageClass, caller string) (provision bool, err error) {
 	if p.nodeDeployment == nil {
 		return true, nil
 	}
 
 	var selectedNode string
+	// TODO SelectedNode什么时候可能为空？
+	// TODO SelectedNode注解是被谁设置的？
+	// TODO SelectedNode和ExternalProvisioner如果选定在同一个节点上意味着什么？
 	if claim.Annotations != nil {
 		selectedNode = claim.Annotations[annSelectedNode]
 	}

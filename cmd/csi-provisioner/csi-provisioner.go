@@ -111,12 +111,14 @@ var (
 	kubeAPICapacityBurst = flag.Int("kube-api-capacity-burst", 5, "Burst to use for storage capacity updates while communicating with the kubernetes apiserver. Defaults to 5.")
 
 	// TODO 这个参数有啥用？
+	// 通过调用CSI插件的GetCapacity接口获取CSI插件的能力然后修改CSIStorageCapacity资源对象
 	enableCapacity           = flag.Bool("enable-capacity", false, "This enables producing CSIStorageCapacity objects with capacity information from the driver's GetCapacity call.")
 	capacityImmediateBinding = flag.Bool("capacity-for-immediate-binding", false, "Enables producing capacity information for storage classes with immediate binding. Not needed for the Kubernetes scheduler, maybe useful for other consumers or for debugging.")
 	capacityPollInterval     = flag.Duration("capacity-poll-interval", time.Minute, "How long the external-provisioner waits before checking for storage capacity changes.")
-	capacityOwnerrefLevel    = flag.Int("capacity-ownerref-level", 1, "The level indicates the number of objects that need to be traversed starting from the pod identified by the POD_NAME and NAMESPACE environment variables to reach the owning object for CSIStorageCapacity objects: -1 for no owner, 0 for the pod itself, 1 for a StatefulSet or DaemonSet, 2 for a Deployment, etc.")
-
+	// TODO 这个参数有何作用？
+	capacityOwnerrefLevel = flag.Int("capacity-ownerref-level", 1, "The level indicates the number of objects that need to be traversed starting from the pod identified by the POD_NAME and NAMESPACE environment variables to reach the owning object for CSIStorageCapacity objects: -1 for no owner, 0 for the pod itself, 1 for a StatefulSet or DaemonSet, 2 for a Deployment, etc.")
 	// TODO 这个属性启用与否有何影响？
+	// TODO 什么叫做node-local volume
 	enableNodeDeployment           = flag.Bool("node-deployment", false, "Enables deploying the external-provisioner together with a CSI driver on nodes to manage node-local volumes.")
 	nodeDeploymentImmediateBinding = flag.Bool("node-deployment-immediate-binding", true, "Determines whether immediate binding is supported when deployed on each node.")
 	nodeDeploymentBaseDelay        = flag.Duration("node-deployment-base-delay", 20*time.Second, "Determines how long the external-provisioner sleeps initially before trying to own a PVC with immediate binding.")
@@ -399,13 +401,16 @@ func main() {
 	// TODO 这个特性是干嘛的？
 	if utilfeature.DefaultFeatureGate.Enabled(features.CrossNamespaceVolumeDataSource) {
 		gatewayFactory = gatewayInformers.NewSharedInformerFactory(gatewayClient, ctrl.ResyncPeriodOfReferenceGrantInformer)
+		// TODO ReferenceGrant资源对象是干啥的？
 		referenceGrants := gatewayFactory.Gateway().V1beta1().ReferenceGrants()
 		referenceGrantLister = referenceGrants.Lister()
 	}
 
 	// -------------------------------
 	// PersistentVolumeClaims informer
+	// 实例化限速器
 	rateLimiter := workqueue.NewItemExponentialFailureRateLimiter(*retryIntervalStart, *retryIntervalMax)
+	// TODO 实例化工作队列，看命名应该是用来处理PVC资源的工作队列
 	claimQueue := workqueue.NewNamedRateLimitingQueue(rateLimiter, "claims")
 	claimInformer := factory.Core().V1().PersistentVolumeClaims().Informer()
 
@@ -421,10 +426,12 @@ func main() {
 		controller.NodesLister(nodeLister),
 	}
 
+	// TODO 这里又是在处理什么特性？
 	if utilfeature.DefaultFeatureGate.Enabled(features.HonorPVReclaimPolicy) {
 		provisionerOptions = append(provisionerOptions, controller.AddFinalizer(true))
 	}
 
+	// TODO 这里又是在判断什么？
 	if supportsMigrationFromInTreePluginName != "" {
 		provisionerOptions = append(provisionerOptions, controller.AdditionalProvisionerNames([]string{supportsMigrationFromInTreePluginName}))
 	}
@@ -461,6 +468,7 @@ func main() {
 	)
 
 	var capacityController *capacity.Controller
+	// TODO 如果启用了enable-capacity参数，那么将会通过调用CSI插件的GetCapacity接口获取CSI插件的能力然后创建CSIStorageCapacity资源对象
 	if *enableCapacity {
 		// Publishing storage capacity information uses its own client
 		// with separate rate limiting.
@@ -482,6 +490,7 @@ func main() {
 				klog.Fatal("need POD_NAME env variable to determine CSIStorageCapacity owner")
 			}
 			var err error
+			// TODO OwnerReferenceController主要是用于查找资源对象的OwnerReference
 			controller, err = owner.Lookup(config, namespace, podName,
 				schema.GroupVersionKind{
 					Group:   "",
