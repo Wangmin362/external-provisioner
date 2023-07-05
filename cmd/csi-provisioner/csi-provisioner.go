@@ -115,7 +115,8 @@ var (
 	enableCapacity           = flag.Bool("enable-capacity", false, "This enables producing CSIStorageCapacity objects with capacity information from the driver's GetCapacity call.")
 	capacityImmediateBinding = flag.Bool("capacity-for-immediate-binding", false, "Enables producing capacity information for storage classes with immediate binding. Not needed for the Kubernetes scheduler, maybe useful for other consumers or for debugging.")
 	capacityPollInterval     = flag.Duration("capacity-poll-interval", time.Minute, "How long the external-provisioner waits before checking for storage capacity changes.")
-	// TODO 这个参数有何作用？
+	// TODO 这个参数有何作用？  向上寻找OwnerReference的层数
+	// OwnerReference是一个链式结构，我们可以通过OwnerReference找到这个资源的父资源，譬如Pod -> ReplicaSet -> Deployment -> RedisLeader
 	capacityOwnerrefLevel = flag.Int("capacity-ownerref-level", 1, "The level indicates the number of objects that need to be traversed starting from the pod identified by the POD_NAME and NAMESPACE environment variables to reach the owning object for CSIStorageCapacity objects: -1 for no owner, 0 for the pod itself, 1 for a StatefulSet or DaemonSet, 2 for a Deployment, etc.")
 	// TODO 这个属性启用与否有何影响？
 	// TODO 什么叫做node-local volume
@@ -516,11 +517,13 @@ func main() {
 		} else {
 			var segment topology.Segment
 			if nodeDeployment.NodeInfo.AccessibleTopology != nil {
+				// 通过AccessibleTopology属性，可以指定CSI存储插件的Region, Zone, Rack等等
 				for key, value := range nodeDeployment.NodeInfo.AccessibleTopology.Segments {
 					segment = append(segment, topology.SegmentEntry{Key: key, Value: value})
 				}
 			}
 			klog.Infof("producing CSIStorageCapacity objects with fixed topology segment %s", segment)
+			// TODO 什么叫做固定的拓扑结构？
 			topologyInformer = topology.NewFixedNodeTopology(&segment)
 		}
 		go topologyInformer.RunWorker(ctx)

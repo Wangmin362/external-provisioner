@@ -154,6 +154,7 @@ func NewNodeTopology(
 
 var _ Informer = &nodeTopology{}
 
+// TODO 1、CSINode资源对象是谁生成的？ CSINode.Spec.Drivers.TypologyKeys一般是怎么使用的？
 type nodeTopology struct {
 	driverName      string
 	client          kubernetes.Interface
