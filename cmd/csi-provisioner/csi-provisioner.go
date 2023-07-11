@@ -154,7 +154,7 @@ func main() {
 	}
 
 	node := os.Getenv("NODE_NAME")
-	// TODO 为啥Node必须指定？ external-provisioner不是部署在master节点上么？
+	// TODO 为啥Node必须指定？ Node节点分为Mater节点以及Worker节点
 	if *enableNodeDeployment && node == "" {
 		klog.Fatal("The NODE_NAME environment variable must be set when using --enable-node-deployment.")
 	}
@@ -209,7 +209,7 @@ func main() {
 	}
 
 	var gatewayClient gatewayclientset.Interface
-	// TODO 这个特性干嘛的？
+	// TODO 这个特性干嘛的？  似乎是可以跨名称空间引用Volume
 	if utilfeature.DefaultFeatureGate.Enabled(features.CrossNamespaceVolumeDataSource) {
 		// gatewayclientset.NewForConfig creates a new Clientset for GatewayClient
 		gatewayClient, err = gatewayclientset.NewForConfig(config)
@@ -350,7 +350,7 @@ func main() {
 
 	var nodeLister listersv1.NodeLister
 	var csiNodeLister storagelistersv1.CSINodeLister
-	// TODO CSI插件的拓扑能力指的是什么？
+	// 所谓的CSI拓扑能力，实际上就是CSI存储插件会提供存储设备的拓扑信息，譬如那个区域、哪个机架
 	if ctrl.SupportsTopology(pluginCapabilities) {
 		if nodeDeployment != nil {
 			// Avoid watching in favor of fake, static objects. This is particularly relevant for
@@ -558,6 +558,7 @@ func main() {
 				Name: "#%123-invalid-name",
 			},
 		}
+		// 创建CSIStorageCapacity资源对象
 		createdCapacity, err := clientset.StorageV1().CSIStorageCapacities(namespace).Create(ctx, invalidCapacity, metav1.CreateOptions{})
 		switch {
 		case err == nil:
@@ -662,6 +663,7 @@ func main() {
 			// wait for sync.
 			factoryForNamespace.Start(ctx.Done())
 		}
+		// 等待关心的K8S资源同步完成
 		cacheSyncResult := factory.WaitForCacheSync(ctx.Done())
 		for _, v := range cacheSyncResult {
 			if !v {
