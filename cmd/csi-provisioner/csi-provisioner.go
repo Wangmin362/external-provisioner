@@ -73,7 +73,7 @@ var (
 	master     = flag.String("master", "", "Master URL to build a client config from. Either this or kubeconfig needs to be set if the provisioner is being run out of cluster.")
 	kubeconfig = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Either this or master needs to be set if the provisioner is being run out of cluster.")
 	// external-provisioner, external-attacher, external-resizer, external-snapshotter和CSI插件应该部署在一个节点当中，并且
-	// 需要把CSI插件的socket文件挂载到这些容器当中
+	// 需要把CSI插件的socket文件挂载到这些容器当中。其实就是这些个容器需要共享CSI服务socket
 	csiEndpoint = flag.String("csi-address", "/run/csi/socket", "The gRPC endpoint for Target CSI Volume.")
 	// TODO 用于为CSI插件指定创建的卷的前缀
 	volumeNamePrefix     = flag.String("volume-name-prefix", "pvc", "Prefix to apply to the name of a created volume.")
@@ -137,7 +137,7 @@ func main() {
 	var config *rest.Config
 	var err error
 
-	// TODO 这里似乎在解析特性开关
+	// 解析特性开关，k8s.io/component-base/featuregate/feature_gate.go
 	flag.Var(utilflag.NewMapStringBool(&featureGates), "feature-gates", "A set of key=value pairs that describe feature gates for alpha/experimental features. "+
 		"Options are:\n"+strings.Join(utilfeature.DefaultFeatureGate.KnownFeatures(), "\n"))
 
@@ -148,13 +148,14 @@ func main() {
 
 	ctx := context.Background()
 
-	// 设置特性开挂
+	// 设置特性开关
 	if err := utilfeature.DefaultMutableFeatureGate.SetFromMap(featureGates); err != nil {
 		klog.Fatal(err)
 	}
 
 	node := os.Getenv("NODE_NAME")
-	// TODO 为啥Node必须指定？ external-provisioner不是部署在master节点上么？
+	// Q：为啥Node必须指定？ external-provisioner不是部署在master节点上么？
+	// A: manage node-local volumes
 	if *enableNodeDeployment && node == "" {
 		klog.Fatal("The NODE_NAME environment variable must be set when using --enable-node-deployment.")
 	}
@@ -203,6 +204,7 @@ func main() {
 	}
 
 	// snapclientset.NewForConfig creates a new Clientset for  VolumesnapshotV1Client
+	// TODO provisioner要实现快照卷的创建？
 	snapClient, err := snapclientset.NewForConfig(config)
 	if err != nil {
 		klog.Fatalf("Failed to create snapshot client: %v", err)
@@ -232,7 +234,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 探测CSI插件已经就绪，如果CSI插件没有就绪，external-provisioner需要一直等待，知道CSI插件就绪
+	// 探测CSI插件已经就绪，如果CSI插件没有就绪，external-provisioner需要一直等待，直到CSI插件就绪
 	err = ctrl.Probe(grpcClient, *operationTimeout)
 	if err != nil {
 		klog.Error(err.Error())
@@ -316,7 +318,7 @@ func main() {
 	// -------------------------------
 	// Listers
 	// Create informer to prevent hit the API server for all resource request
-	// 监听StorageClass
+	// 之所以要监听StorageClass，是因为PV的生成就是通过StorageClass模板创建的
 	scLister := factory.Storage().V1().StorageClasses().Lister()
 	// 监听PVC
 	claimLister := factory.Core().V1().PersistentVolumeClaims().Lister()
