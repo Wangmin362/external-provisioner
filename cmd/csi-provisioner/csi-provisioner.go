@@ -211,7 +211,7 @@ func main() {
 	}
 
 	var gatewayClient gatewayclientset.Interface
-	// TODO 这个特性干嘛的？
+	// TODO 这个特性干嘛的？  似乎是可以跨名称空间引用Volume
 	if utilfeature.DefaultFeatureGate.Enabled(features.CrossNamespaceVolumeDataSource) {
 		// gatewayclientset.NewForConfig creates a new Clientset for GatewayClient
 		gatewayClient, err = gatewayclientset.NewForConfig(config)
